@@ -1,0 +1,79 @@
+# Python Virtual Environment
+chatbot_venv/
+*.venv/
+venv/
+
+# Environment Variables
+.env
+*.env
+
+# Python Cache Files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs
+*.log
+chatbot_app.log
+
+# Conversation History (if you don’t want to track it)
+conversation_history.json
+
+# Temporary Files
+*.tmp
+*.bak
+*.swp
+*~
+
+# Python Package Installation Files
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+*.whl
+
+# Flask and Web Development
+instance/
+*.sqlite
+
+# NLP and Machine Learning
+*.model
+*.ckpt
+*.pth
+*.bin
+*.h5
+transformers_cache/
+huggingface_cache/
+.cache/
+
+# Spacy Models (if downloaded locally)
+spacy_cache/
+en_core_web_sm*/
+xx_ent_wiki_sm*/
+
+# IDE and Editor Files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# System Files
+.DS_Store
+Thumbs.db
+
+# Documentation and Build Artifacts
+docs/_build/
+*.pdf
+*.zip
+
+# Project-Specific Temporary Directories
+temp/
+tmp/
+
+# Allow Source Code and Assets
+!src/
+!templates/
+!static/
+!requirements.txt

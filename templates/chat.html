@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Chatbot - SAP Be One</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <img src="/static/logo.png" alt="SAP Be One Logo">
+            <div>
+                <button id="reset-btn" onclick="resetChat()" title="Reset" style="background: none; border: none; color: white; cursor: pointer; margin-right: 10px;">🗑️</button>
+                <button id="theme-toggle" onclick="toggleTheme()" title="Dark Mode" style="background: none; border: none; color: white; cursor: pointer;">🌙</button>
+            </div>
+        </div>
+        <div class="chat-box" id="chat-box"></div>
+        <div class="input-area">
+            <input type="text" id="message" placeholder="اكتب سؤالك هنا">
+            <button onclick="sendMessage()">إرسال</button>
+        </div>
+    </div>
+
+    <script>
+        function sendMessage() {
+            let message = $("#message").val().trim();
+            if (!message) return;
+
+            let chatBox = $("#chat-box");
+            chatBox.append(`<div class="message user-message">You: ${message}</div>`);
+            chatBox.append(`<div class="message bot-message"><span class="loading">جاري التحميل...</span></div>`);
+            chatBox.scrollTop(chatBox[0].scrollHeight);
+
+            $.post("/", { message: message }, function (data) {
+                if (data.status === "success") {
+                    let className = data.response.includes("مفيش") || data.response.includes("found") ? "" : "success";
+                    $(".loading").parent().replaceWith(`<div class="message bot-message ${className}">Bot: ${data.response}</div>`);
+                    chatBox.scrollTop(chatBox[0].scrollHeight);
+                } else {
+                    alert(data.message);
+                }
+            });
+            $("#message").val("");
+        }
+
+        function resetChat() {
+            $.post("/reset", function (data) {
+                if (data.status === "success") {
+                    $("#chat-box").empty();
+                }
+            });
+        }
+
+        function toggleTheme() {
+            $("body").toggleClass("dark-mode");
+            $("#theme-toggle").text($("body").hasClass("dark-mode") ? "☀️" : "🌙");
+        }
+
+        $("#message").on("keypress", function (e) {
+            if (e.which === 13) {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
