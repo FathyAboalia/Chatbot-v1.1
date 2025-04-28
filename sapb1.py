@@ -27,29 +27,6 @@ class SAPB1ServiceLayer:
             logger.error(f"Login failed: {str(e)}")
             raise Exception(f"Failed to login to SAP B1 Service Layer: {str(e)}")
 
-    def get_price(self, product_name: str) -> Optional[float]:
-        try:
-            url = f"{self.base_url}/Items?$filter=contains(ItemName,'{product_name}')&$select=ItemCode,ItemName,ItemPrices"
-            response = self.session.get(url)
-            response.raise_for_status()
-            data = response.json()
-            items = data.get("value", [])
-            return float(items[0]["ItemPrices"][0]["Price"]) if items else None
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to get price for {product_name}: {str(e)}")
-            raise Exception(f"Failed to get price: {str(e)}")
-
-    def check_stock(self, product_name: str) -> int:
-        try:
-            url = f"{self.base_url}/Items?$filter=contains(ItemName,'{product_name}')&$select=ItemCode,ItemWarehouseInfoCollection"
-            response = self.session.get(url)
-            response.raise_for_status()
-            data = response.json()
-            items = data.get("value", [])
-            return sum(wh.get("InStock", 0) for wh in items[0].get("ItemWarehouseInfoCollection", [])) if items else 0
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to check stock for {product_name}: {str(e)}")
-            raise Exception(f"Failed to check stock: {str(e)}")
 
     def place_order(self, product_name: str, quantity: int) -> str:
         try:
@@ -64,7 +41,7 @@ class SAPB1ServiceLayer:
 
             order_url = f"{self.base_url}/Orders"
             payload = {                 
-                "CardCode": "C20000",  # Replace with actual customer code if needed
+                "CardCode": "C20000",  
                 "DocumentLines": [{"ItemCode": item_code, "Quantity": quantity}]
             }
             response = self.session.post(order_url, json=payload)
