@@ -24,13 +24,9 @@ class NLPProcessor:
         user_input_lower = user_input  # بدون .lower()
 
         # تحديد الـ intent بتحويل لصغير بس في المقارنة
-        INTENTS = ["get_price", "place_order", "check_stock"]
-        if any(kw in user_input_lower.lower() for kw in ["how much", "price", "cost", "كم", "سعر"]):
-            intent = "get_price"
-        elif any(kw in user_input_lower.lower() for kw in ["order", "buy", "place"]):
+        INTENTS = ["place_order", "check_stock"]
+        if any(kw in user_input_lower.lower() for kw in ["order", "buy", "place"]):
             intent = "place_order"
-        elif any(kw in user_input_lower.lower() for kw in ["stock", "available", "check"]):
-            intent = "check_stock"
         else:
             result = self.classifier(user_input, candidate_labels=INTENTS)
             intent = result["labels"][0]
@@ -40,8 +36,7 @@ class NLPProcessor:
         quantity = int(quantity_match.group(0)) if quantity_match else 1
 
         # الكلمات اللي هنشيلها
-        keywords = ["how much", "price", "cost", "order", "buy", "place", "stock", "available", "check",
-                    "what", "the", "of", "كم", "سعر", "ماهو", "ال"]
+        keywords = ["order", "buy", "place"]
         for word in keywords:
             user_input_lower = user_input_lower.replace(word, " ").replace(word.lower(), " ")
 
@@ -68,12 +63,6 @@ class Chatbot:
 
             if not product:
                 return "من فضلك حدد اسم المنتج." if "سعر" in user_input.lower() else "Please specify the product name."
-
-            if intent == "get_price":
-                price = self.db.get_price(product)
-                if price is not None:
-                    return f"سعر {product} هو ${price:.2f}." if "سعر" in user_input.lower() else f"The price of {product} is ${price:.2f}."
-                return f"مفيش منتج اسمه {product}." if "سعر" in user_input.lower() else f"No product named {product} found."
 
             elif intent == "place_order":
                 return self.db.place_order(product, quantity)
