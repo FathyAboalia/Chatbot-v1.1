@@ -4,51 +4,81 @@ import re
 import os
 import logging
 from typing import Tuple, Optional
-from transformers import pipeline
+from transformers import pipeline, T5Tokenizer, T5ForConditionalGeneration
+import torch
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class NLPProcessor:
-    def __init__(self):
+    def __init__(self, model_name: str = "google/flan-t5-base"):
         try:
-            # Use PyTorch explicitly by setting framework="pt"
-            self.classifier = pipeline("zero-shot-classification", model="distilbert-base-uncased", framework="pt")
-            logger.info("NLP Processor initialized successfully with PyTorch.")
+            # Initialize Flan-T5 model and tokenizer with PyTorch
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            self.tokenizer = T5Tokenizer.from_pretrained(model_name)
+            self.model = T5ForConditionalGeneration.from_pretrained(model_name).to(self.device)
+            logger.info(f"Flan-T5 model ({model_name}) initialized successfully on {self.device}.")
         except Exception as e:
-            logger.error(f"Failed to initialize NLP Processor: {str(e)}")
+            logger.error(f"Failed to initialize Flan-T5 model: {str(e)}")
+            raise
+
+    def generate_text(self, prompt: str, max_length: int = 100) -> str:
+        """Generate text using Flan-T5 for a given prompt."""
+        try:
+            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, padding=True).to(self.device)
+            outputs = self.model.generate(
+                inputs.input_ids,
+                max_length=max_length,
+                num_beams=5,
+                early_stopping=True
+            )
+            return self.tokenizer.decode(outputs[0], skip_special_tokens=True).strip()
+        except Exception as e:
+            logger.error(f"Error generating text with Flan-T5: {str(e)}")
             raise
 
     def process_input(self, user_input: str) -> Tuple[str, Optional[str], int]:
-        user_input_lower = user_input  # بدون .lower()
+        """Process user input to extract intent, product, and quantity using Flan-T5."""
+        user_input_lower = user_input  # Keep original case for product names
 
-        # تحديد الـ intent بتحويل لصغير بس في المقارنة
-        INTENTS = ["place_order", "check_stock"]
+        # Define possible intents
+        INTENTS = ["place_order"]
+
+        # Try keyword-based intent detection first for efficiency
         if any(kw in user_input_lower.lower() for kw in ["order", "buy", "place"]):
             intent = "place_order"
         else:
-            result = self.classifier(user_input, candidate_labels=INTENTS)
-            intent = result["labels"][0]
+            # Use Flan-T5 for intent classification
+            intent_prompt = (
+                f"Classify the intent of the following input as one of {', '.join(INTENTS)}: "
+                f"'{user_input}'"
+            )
+            intent = self.generate_text(intent_prompt)
+            if intent not in INTENTS:
+                intent = "unknown"  # Fallback for unrecognized intents
 
-        # استخراج الكمية
-        quantity_match = re.search(r"(\d+)", user_input_lower)
-        quantity = int(quantity_match.group(0)) if quantity_match else 1
+        # Use Flan-T5 to extract product and quantity
+        extraction_prompt = (
+            f"Extract the product name and quantity from the following input. "
+            f"Return in the format: 'product: <name>, quantity: <number>'. "
+            f"If no product or quantity is found, use 'product: None, quantity: 1'. "
+            f"Input: '{user_input}'"
+        )
+        extraction_result = self.generate_text(extraction_prompt)
 
-        # الكلمات اللي هنشيلها
-        keywords = ["order", "buy", "place"]
-        for word in keywords:
-            user_input_lower = user_input_lower.replace(word, " ").replace(word.lower(), " ")
+        # Parse the extraction result
+        try:
+            product_match = re.search(r"product: (.*?)(?:, quantity:|$)", extraction_result)
+            quantity_match = re.search(r"quantity: (\d+)", extraction_result)
+            product = product_match.group(1).strip() if product_match and product_match.group(1).strip() != "None" else None
+            quantity = int(quantity_match.group(1)) if quantity_match else 1
+        except Exception as e:
+            logger.warning(f"Failed to parse extraction result: {extraction_result}. Error: {str(e)}")
+            product = None
+            quantity = 1
 
-        # تنظيف النص واستخراج المنتج
-        product = " ".join(user_input_lower.split()).strip()
-        if quantity_match:
-            product = product.replace(quantity_match.group(0), "").strip()
-
-        logger.info(f"المنتج المستخرج: {product}")
-
-        if not product:
-            return intent, None, quantity
+        logger.info(f"Extracted - Intent: {intent}, Product: {product}, Quantity: {quantity}")
 
         return intent, product, quantity
 
@@ -61,20 +91,29 @@ class Chatbot:
         try:
             intent, product, quantity = self.nlp.process_input(user_input)
 
-            if not product:
-                return "من فضلك حدد اسم المنتج." if "سعر" in user_input.lower() else "Please specify the product name."
+            # Detect language preference based on input
+            is_arabic = any(char in user_input for char in "ابتثجحخدذرزسشصضطظعغفقكلمنهويةى")
 
-            elif intent == "place_order":
-                return self.db.place_order(product, quantity)
+            if not product:
+                return "من فضلك حدد اسم المنتج." if is_arabic else "Please specify the product name."
+
+            if intent == "place_order":
+                result = self.db.place_order(product, quantity)
+                return f"تم تسجيل طلبك لـ {quantity} وحدة من {product}." if is_arabic else result
 
             elif intent == "check_stock":
                 stock = self.db.check_stock(product)
-                return f"مخزون {product} حالياً هو {stock} وحدة." if "مخزون" in user_input.lower() else f"Current stock of {product} is {stock} units."
+                return f"مخزون {product} حالياً هو {stock} وحدة." if is_arabic else f"Current stock of {product} is {stock} units."
 
-            return "مش فاهم طلبك، ممكن توضح؟" if "سعر" in user_input.lower() else "I didn't understand your request. Could you clarify?"
+            # Use Flan-T5 for generating a fallback response
+            fallback_prompt = (
+                f"Generate a polite response in {'Arabic' if is_arabic else 'English'} for a chatbot "
+                f"when the user's request is unclear. Input: '{user_input}'"
+            )
+            return self.nlp.generate_text(fallback_prompt)
         except Exception as e:
             logger.error(f"Error in get_response: {str(e)}")
-            raise
+            return "حدث خطأ، من فضلك حاول مرة أخرى." if is_arabic else "An error occurred. Please try again."
 
 def create_chatbot():
     try:
