@@ -1,4 +1,6 @@
-﻿import logging
+﻿# app.py
+
+import logging
 from flask import Flask, request, render_template, jsonify
 from chatbot import create_chatbot
 
