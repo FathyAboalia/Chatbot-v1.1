@@ -13,3 +13,5 @@ python-dotenv
 sentencepiece>=0.1.99
 datasets==2.12.0
 accelerate==0.20.3
+flask
+requests
