@@ -1,6 +1,4 @@
-﻿# sapb1.py
-
-import logging
+﻿import logging
 import requests
 from typing import Optional
 
@@ -15,7 +13,7 @@ class SAPB1ServiceLayer:
         self.username = username
         self.password = password
         self.session = requests.Session()
-        self.session.verify = verify_ssl  # Disable SSL verification for testing; enable in production
+        self.session.verify = verify_ssl
         self._login()
 
     def _login(self):
@@ -28,6 +26,51 @@ class SAPB1ServiceLayer:
         except requests.exceptions.RequestException as e:
             logger.error(f"Login failed: {str(e)}")
             raise Exception(f"Failed to login to SAP B1 Service Layer: {str(e)}")
+
+    def get_card_code_by_email(self, email: str) -> Optional[str]:
+        """Retrieve CardCode from SAP B1 based on email address."""
+        try:
+            url = f"{self.base_url}/BusinessPartners?$filter=EmailAddress eq '{email}'&$select=CardCode"
+            response = self.session.get(url)
+            response.raise_for_status()
+            data = response.json()
+            partners = data.get("value", [])
+            if not partners:
+                logger.warning(f"No business partner found for email: {email}")
+                return None
+            return partners[0]["CardCode"]
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to retrieve CardCode for email {email}: {str(e)}")
+            return None
+
+    def get_card_code_by_name(self, customer_name: str) -> Optional[str]:
+        """Retrieve CardCode from SAP B1 based on customer name."""
+        try:
+            url = f"{self.base_url}/BusinessPartners?$filter=CardName eq '{customer_name}'&$select=CardCode"
+            response = self.session.get(url)
+            response.raise_for_status()
+            data = response.json()
+            partners = data.get("value", [])
+            if not partners:
+                logger.warning(f"No business partner found for customer name: {customer_name}")
+                return None
+            return partners[0]["CardCode"]
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to retrieve CardCode for customer name {customer_name}: {str(e)}")
+            return None
+
+    def validate_item_code(self, item_code: str) -> bool:
+        """Validate if an ItemCode exists in SAP B1."""
+        try:
+            url = f"{self.base_url}/Items?$filter=ItemCode eq '{item_code}'&$select=ItemCode"
+            response = self.session.get(url)
+            response.raise_for_status()
+            data = response.json()
+            items = data.get("value", [])
+            return bool(items)
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to validate ItemCode {item_code}: {str(e)}")
+            return False
 
     def place_order_from_payload(self, payload: dict) -> str:
         """Send full JSON payload to SAP B1 Orders API."""
@@ -45,7 +88,6 @@ class SAPB1ServiceLayer:
 
     def place_order(self, product_name: str, quantity: int, card_code: str = "C0001") -> str:
         try:
-            # Use exact match for ItemName
             url = f"{self.base_url}/Items?$filter=ItemName eq '{product_name}'&$select=ItemCode"
             response = self.session.get(url)
             response.raise_for_status()
@@ -59,8 +101,9 @@ class SAPB1ServiceLayer:
             order_url = f"{self.base_url}/Orders"
             payload = {
                 "CardCode": card_code,
-                "DocDueDate": "2025-05-05",  # Consider making this dynamic
-                "DocumentLines": [{"ItemCode": item_code, "Quantity": quantity, "BPLId": 1}]  # BPLId may need configuration
+                "DocDate": datetime.now().strftime("%Y-%m-%d"),
+                "DocDueDate": datetime.now().strftime("%Y-%m-%d"),
+                "DocumentLines": [{"ItemCode": item_code, "Quantity": quantity, "BPLId": 1}]
             }
             response = self.session.post(order_url, json=payload)
             if response.status_code == 201:
@@ -70,7 +113,7 @@ class SAPB1ServiceLayer:
             return f"Error placing order: {response.text}"
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to place order for {product_name}: {str(e)}")
-            raise Exception(f"Failed to place order: {str(e)}")
+            return f"Failed to place order: {str(e)}"
 
     def close(self):
         try:

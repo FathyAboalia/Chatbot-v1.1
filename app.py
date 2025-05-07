@@ -1,6 +1,4 @@
-﻿# app.py
-
-import logging
+﻿import logging
 from flask import Flask, request, render_template, jsonify
 from chatbot import create_chatbot
 
@@ -24,9 +22,9 @@ def chat():
         return jsonify({"status": "error", "message": "Chatbot initialization failed. Check server logs."}), 500
 
     if request.method == "POST":
-        user_input = request.form.get("message", "").strip()
+        user_input = request.form.get("input", "").strip()
         if not user_input:
-            return jsonify({"status": "error", "message": "Message cannot be empty."}), 400
+            return jsonify({"status": "error", "message": "Input cannot be empty."}), 400
 
         try:
             response = chatbot.get_response(user_input)

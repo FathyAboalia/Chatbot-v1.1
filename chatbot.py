@@ -1,6 +1,4 @@
-﻿# chatbot.py
-
-import os
+﻿import os
 import re
 import json
 import logging
@@ -14,7 +12,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 class NLPProcessor:
-    """Uses Ollama to classify document type and extract structured data as JSON only."""
+    """Uses Ollama to extract customer details and order details from user input as JSON."""
 
     def __init__(self, ollama_url: str = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate"), 
                  model_name: str = os.getenv("OLLAMA_MODEL", "llama3:instruct")):
@@ -41,15 +39,20 @@ class NLPProcessor:
 
     def extract_structured_json(self, user_input: str) -> dict:
         # Use dynamic dates for consistency
-        now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S.0000000+03:00")
-        due = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S.0000000+03:00")
+        doc_date = datetime.now().strftime("%Y-%m-%d")
+        doc_due_date = datetime.now().strftime("%Y-%m-%d")
 
         prompt = (
-            f'Given the input string: "{user_input}", classify the DocumentType as one of: "Order", "Quotation", or "Price". '
-            f'Then, extract entities in the following format: '
-            f'{{"DocumentType": "<classified_type>", "CardCode": "<customer_code>", '
-            f'"DocumentDate": "{now}", "DocDueDate": "{due}", "DocumentLines": [{{"ItemCode": "<item_code>", "Quantity": <quantity>}}]}} '
-            f'Respond ONLY with a single raw JSON object. Do not add any explanations, greetings, or commentary before or after the JSON. '
+            f'Given the input: "{user_input}", extract the following: '
+            f'- The email address (e.g., customer@example.com) if present. '
+            f'- The customer name (e.g., Ahmed, Fathy) if present. '
+            f'- The CardCode if present. '
+            f'- A list of orders, where each order includes an item code and quantity. '
+            f'Respond ONLY with a single raw JSON object in the following format: '
+            f'{{"Email": "<email_address>", "CustomerName": "<customer_name>", "CardCode": "<card_code>", '
+            f'"DocDate": "{doc_date}", "DocDueDate": "{doc_due_date}", '
+            f'"DocumentLines": [{{"ItemCode": "<item_code>", "Quantity": <quantity>}}, ...]}} '
+            f'If a field is not present, use an empty string for strings or an empty list for DocumentLines. '
             f'Your entire response MUST start and end with {{}} and contain nothing else.'
         )
 
@@ -61,7 +64,7 @@ class NLPProcessor:
             return {}
 
 class Chatbot:
-    """Handles user interactions and queries the service layer for responses."""
+    """Handles user input with customer details and orders, retrieves CardCode, and places orders."""
 
     def __init__(self, service_layer: SAPB1ServiceLayer, nlp_processor: NLPProcessor):
         self.db = service_layer
@@ -76,30 +79,47 @@ class Chatbot:
     def get_response(self, user_input: str) -> str:
         try:
             structured = self.nlp.extract_structured_json(user_input)
-            card = structured.get("CardCode")
+            email = structured.get("Email", "")
+            customer_name = structured.get("CustomerName", "")
+            card_code_input = structured.get("CardCode", "")
             lines = structured.get("DocumentLines", [])
-            intent = structured.get("DocumentType", "").lower()
-            document_date = structured.get("DocumentDate")
+            doc_date = structured.get("DocDate")
             doc_due_date = structured.get("DocDueDate")
 
             is_arabic = self._is_arabic_input(user_input)
 
-            if not card or not lines or not document_date or not doc_due_date:
-                return "البيانات غير مكتملة." if is_arabic else "Incomplete input."
+            if not lines or not doc_date or not doc_due_date:
+                return "البيانات غير مكتملة. يرجى تضمين الطلبات والتواريخ." if is_arabic else "Incomplete input. Please include orders and dates."
 
-            if intent == "order":
-                # Construct payload directly from structured JSON
-                payload = {
-                    "CardCode": card,
-                    "DocumentDate": document_date,
-                    "DocDueDate": doc_due_date,
-                    "DocumentLines": lines
-                }
-                result = self.db.place_order_from_payload(payload)
-                item_summary = ", ".join([f"{line['Quantity']} units of {line['ItemCode']}" for line in lines])
-                return f"تم تسجيل طلبك لـ {item_summary}." if is_arabic else f"Order placed: {item_summary}."
+            # Try to retrieve CardCode based on available identifiers
+            card_code = None
+            if card_code_input:
+                card_code = card_code_input  # Use CardCode if provided
+            elif email:
+                card_code = self.db.get_card_code_by_email(email)
+            elif customer_name:
+                card_code = self.db.get_card_code_by_name(customer_name)
 
-            return self._generate_fallback_response(is_arabic)
+            if not card_code:
+                return "لم يتم العثور على عميل بناءً على المعلومات المقدمة." if is_arabic else "No customer found based on the provided information."
+
+            # Validate ItemCodes
+            for line in lines:
+                item_code = line.get("ItemCode")
+                if not item_code or not self.db.validate_item_code(item_code):
+                    return f"رمز العنصر {item_code} غير صالح أو غير موجود." if is_arabic else f"Item code {item_code} is invalid or not found."
+
+            # Construct JSON with CardCode
+            payload = {
+                "CardCode": card_code,
+                "DocDate": doc_date,
+                "DocDueDate": doc_due_date,
+                "DocumentLines": lines
+            }
+
+            result = self.db.place_order_from_payload(payload)
+            item_summary = ", ".join([f"{line['Quantity']} units of {line['ItemCode']}" for line in lines])
+            return f"تم تسجيل طلبك لـ {item_summary}." if is_arabic else f"Order placed: {item_summary}."
 
         except Exception as e:
             logger.error(f"Error generating response: {str(e)}")
@@ -110,7 +130,7 @@ def create_chatbot():
     try:
         service_layer = SAPB1ServiceLayer(
             base_url=os.getenv("SAPB1_BASE_URL", "https://c19807sl01d04.cloudiax.com:50000/b1s/v1"),
-            company=os.getenv("SAPB1_COMPANY", "BS_PRODUCTIVE"), # A19807_DEMO
+            company=os.getenv("SAPB1_COMPANY", "BS_PRODUCTIVE"),
             username=os.getenv("SAPB1_USERNAME", "manager"),
             password=os.getenv("SAPB1_PASSWORD", "12345"),
             verify_ssl=os.getenv("SAPB1_VERIFY_SSL", "True").lower() == "true"
