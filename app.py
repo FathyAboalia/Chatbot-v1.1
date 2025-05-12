@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Initialize chatbot with error handling
+# Initialize chatbot with error handling and logging
 try:
     chatbot = create_chatbot()
     logger.info("Chatbot initialized successfully.")
@@ -22,9 +22,9 @@ def chat():
         return jsonify({"status": "error", "message": "Chatbot initialization failed. Check server logs."}), 500
 
     if request.method == "POST":
-        user_input = request.form.get("message", "").strip()
+        user_input = request.form.get("input", "").strip()
         if not user_input:
-            return jsonify({"status": "error", "message": "Message cannot be empty."}), 400
+            return jsonify({"status": "error", "message": "Input cannot be empty."}), 400
 
         try:
             response = chatbot.get_response(user_input)

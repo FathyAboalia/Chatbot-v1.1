@@ -1,63 +1,104 @@
-﻿import requests
-import logging
-from typing import Optional
+﻿import logging      # لتسجيل الأحداث (نجاح، تحذير، خطأ)
+import requests     # لإرسال طلبات HTTP إلى SAP B1
+import os           # لإدارة متغيرات البيئة
+import re           # لإجراء عمليات البحث والتعامل مع النصوص
+import json         # لتحويل البيانات بين JSON و Python
+from typing import Optional, Dict   # لتحديد أنواع المتغيرات والوسائط
+from datetime import datetime     # لإدارة التواريخ والوقت
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 class SAPB1ServiceLayer:
-    def __init__(self, base_url: str, company: str, username: str, password: str, verify_ssl: bool = True):
+    def __init__(self, base_url: str, company: str, username: str, password: str, verify_ssl: bool):
         self.base_url = base_url
         self.company = company
         self.username = username
         self.password = password
+        self.verify_ssl = verify_ssl
         self.session = requests.Session()
-        self.session.verify = verify_ssl  # SSL verification toggle
-        self._login()
+        self.session.verify = verify_ssl
+        self.session.headers.update({"Content-Type": "application/json"})
+        self.logged_in = False
+        self.login()
 
-    def _login(self):
+    def login(self):
+        login_url = f"{self.base_url}/Login"
+        payload = {
+            "CompanyDB": self.company,
+            "UserName": self.username,
+            "Password": self.password
+        }
         try:
-            login_url = f"{self.base_url}/Login"
-            payload = {"CompanyDB": self.company, "UserName": self.username, "Password": self.password}
             response = self.session.post(login_url, json=payload)
             response.raise_for_status()
-            logger.info(f"Successfully logged into SAP B1 at {self.base_url}")
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Login failed: {str(e)}")
-            raise Exception(f"Failed to login to SAP B1 Service Layer: {str(e)}")
-
-
-    def place_order(self, product_name: str, quantity: int) -> str:
-        try:
-            url = f"{self.base_url}/Items?$filter=contains(ItemName,'{product_name}')&$select=ItemCode"
-            response = self.session.get(url)
-            response.raise_for_status()
             data = response.json()
-            items = data.get("value", [])
-            if not items:
-                return f"No product named {product_name} found."
-            item_code = items[0]["ItemCode"]
+            session_id = data.get("SessionId")
+            route_id = data.get("RouteId")
 
-            order_url = f"{self.base_url}/Orders"
-            payload = {                 
-                "CardCode": "C20000",  
-                "DocumentLines": [{"ItemCode": item_code, "Quantity": quantity}]
-            }
-            response = self.session.post(order_url, json=payload)
-            if response.status_code == 201:
-                logger.info(f"Order placed: {quantity} units of {product_name}")
-                return f"Order for {quantity} units of {product_name} placed successfully."
-            return "Error placing order."
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to place order for {product_name}: {str(e)}")
-            raise Exception(f"Failed to place order: {str(e)}")
+            self.session.headers.update({
+                "B1SESSION": session_id,
+                "ROUTEID": route_id
+            })
+            self.logged_in = True
+            logger.info("Logged in to SAP B1 Service Layer.")
+        except Exception as e:
+            logger.error(f"Login failed: {str(e)}")
+            self.logged_in = False
 
-    def close(self):
+    def request_with_reauth(self, method, url, **kwargs):
+        if not self.logged_in:
+            self.login()
+        full_url = f"{self.base_url}/{url}"
+        response = self.session.request(method, full_url, **kwargs)
+
+        if response.status_code == 401:
+            logger.warning("Session expired. Logging in again...")
+            self.login()
+            response = self.session.request(method, full_url, **kwargs)
+
+        response.raise_for_status()
+        return response
+
+    def get_card_code_by_email(self, email: str) -> Optional[str]:
         try:
-            logout_url = f"{self.base_url}/Logout"
-            self.session.post(logout_url)
-            self.session.close()
-            logger.info("SAP B1 session closed.")
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"Failed to logout: {str(e)}")
+            endpoint = f"BusinessPartners?$filter=E_Mail eq '{email}'&$select=CardCode"
+            response = self.request_with_reauth("GET", endpoint)
+            data = response.json()
+            if data["value"]:
+                return data["value"][0]["CardCode"]
+        except Exception as e:
+            logger.error(f"Error retrieving CardCode for email {email}: {str(e)}")
+        return None
+
+    def get_card_code_by_name(self, customer_name: str) -> Optional[str]:
+        try:
+            endpoint = f"BusinessPartners?$filter=CardName eq '{customer_name}'&$select=CardCode"
+            response = self.request_with_reauth("GET", endpoint)
+            data = response.json()
+            if data["value"]:
+                return data["value"][0]["CardCode"]
+        except Exception as e:
+            logger.error(f"Error retrieving CardCode for name {customer_name}: {str(e)}")
+        return None
+
+    def get_item_code_by_name(self, item_name: str) -> Optional[str]:
+        try:
+            endpoint = f"Items?$filter=ItemName eq '{item_name}'&$select=ItemCode"
+            response = self.request_with_reauth("GET", endpoint)
+            data = response.json()
+            if data["value"]:
+                return data["value"][0]["ItemCode"]
+        except Exception as e:
+            logger.error(f"Error retrieving item code for {item_name}: {str(e)}")
+        return None
+
+    def place_order_from_payload(self, payload: Dict) -> bool:
+        try:
+            response = self.request_with_reauth("POST", "Orders", json=payload)
+            logger.info(f"Order placed successfully with payload: {json.dumps(payload, ensure_ascii=False)}")
+            return True
+        except Exception as e:
+            logger.error(f"Error placing order: {str(e)}")
+            return False

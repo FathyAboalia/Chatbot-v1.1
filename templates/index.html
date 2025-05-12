@@ -522,7 +522,7 @@ function generateContent() {
     const typingIndicator = showTypingIndicator();
     promptInput.value = '';
 
-    $.post("/", { message: prompt }, function(data) {
+    $.post("/", { input: prompt }, function(data) {
         removeTypingIndicator(typingIndicator);
         if (data.status === "success") {
             const className = data.response.includes("مفيش") || data.response.includes("found") ? "" : "success";
