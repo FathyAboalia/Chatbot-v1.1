@@ -7,9 +7,30 @@ from typing import Dict
 from datetime import datetime, timedelta
 from sapb1 import SAPB1ServiceLayer
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+# Configure logging to both console and file
+log_directory = "logs"
+if not os.path.exists(log_directory):
+    os.makedirs(log_directory)
+
+# Create a timestamped log file
+log_filename = os.path.join(log_directory, f"chatbot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+
+# Configure logging with both file and console handlers
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# File handler
+file_handler = logging.FileHandler(log_filename, encoding='utf-8')
+file_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+
+# Console handler
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+
+# Add handlers to logger
+logger.handlers = []  # Clear any existing handlers
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 
 class NLPProcessor:
     """Uses Ollama to extract customer details and order details from user input as JSON."""
@@ -18,6 +39,7 @@ class NLPProcessor:
                  model_name: str = os.getenv("OLLAMA_MODEL", "deepseek-r1:7b")):
         self.ollama_url = ollama_url
         self.model_name = model_name
+        logger.info(f"Initialized NLPProcessor with ollama_url={self.ollama_url}, model_name={self.model_name}")
 
     def generate_text(self, prompt: str) -> str:
         payload = {
@@ -25,16 +47,19 @@ class NLPProcessor:
             "prompt": prompt,
             "stream": False
         }
+        logger.info(f"Sending request to Ollama with payload: {json.dumps(payload, ensure_ascii=False)}")
         try:
             response = requests.post(self.ollama_url, json=payload)
             response.raise_for_status()
             result = response.json()["response"].strip()
+            logger.info(f"Received response from Ollama: {result}")
         
             # Extract JSON between first { and last }
             start = result.find("{")
             end = result.rfind("}") + 1
             if start != -1 and end != -1:
                 return result[start:end]
+            logger.warning("No valid JSON found in Ollama response, returning empty JSON")
             return "{}"
         except Exception as e:
             logger.error(f"Ollama error: {str(e)}")
@@ -78,10 +103,11 @@ class NLPProcessor:
                 line for line in parsed.get("DocumentLines", [])
                 if line.get("ItemName") and isinstance(line.get("Quantity"), int) and line["Quantity"] > 0
             ]
+            logger.info(f"Parsed and validated JSON: {json.dumps(parsed, ensure_ascii=False)}")
             return parsed
         except Exception as e:
             logger.warning(f"Invalid JSON from Ollama: {result}, Error: {str(e)}")
-            return {
+            default_response = {
                 "Email": "",
                 "CustomerName": "",
                 "CardCode": "",
@@ -89,6 +115,8 @@ class NLPProcessor:
                 "DocDueDate": doc_due_date,
                 "DocumentLines": []
             }
+            logger.info(f"Returning default JSON due to parsing error: {json.dumps(default_response, ensure_ascii=False)}")
+            return default_response
 
 class Chatbot:
     """Handles user input with customer details and orders, retrieves CardCode, and places orders."""
@@ -96,13 +124,17 @@ class Chatbot:
     def __init__(self, service_layer: SAPB1ServiceLayer, nlp_processor: NLPProcessor):
         self.db = service_layer
         self.nlp = nlp_processor
+        logger.info("Initialized Chatbot with SAPB1ServiceLayer and NLPProcessor")
 
     def _is_arabic_input(self, user_input: str) -> bool:
-        return any(char in user_input for char in "ابتثجحخدذرزسشصضطظعغفقكلمنهويةى")
+        is_arabic = any(char in user_input for char in "ابتثجحخدذرزسشصضطظعغفقكلمنهويةى")
+        logger.info(f"Checked if input is Arabic: {is_arabic}")
+        return is_arabic
 
     def _generate_fallback_response(self, is_arabic: bool) -> str:
-        return "من فضلك وضح طلبك أكثر." if is_arabic else "Could you please clarify your request?"
-
+        response = "من فضلك وضح طلبك أكثر." if is_arabic else "Could you please clarify your request?"
+        logger.info(f"Generated fallback response: {response}")
+        return response
 
     def get_response(self, user_input: str) -> str:
         try:
@@ -124,7 +156,9 @@ class Chatbot:
             is_arabic = self._is_arabic_input(user_input)
 
             if not lines or not doc_date or not doc_due_date:
-                return "البيانات غير مكتملة. يرجى تضمين الطلبات والتواريخ." if is_arabic else "Incomplete input. Please include orders and dates."
+                response = "البيانات غير مكتملة. يرجى تضمين الطلبات والتواريخ." if is_arabic else "Incomplete input. Please include orders and dates."
+                logger.info(f"Response due to incomplete input: {response}")
+                return response
 
             # Try to retrieve CardCode using priority: input > email > name
             card_code = card_code_input or (
@@ -134,12 +168,10 @@ class Chatbot:
             )
 
             if not card_code:
-                # إذا لم يتم العثور على العميل، استخدم عميل افتراضي للتجربة
-                default_card_code = "C00001"  # رمز العميل الافتراضي
+                # Use default customer for testing
+                default_card_code = "C00001"  # Default CardCode
                 logger.info(f"Using default customer CardCode: {default_card_code} as no customer was found")
                 card_code = default_card_code
-                # return "لم يتم العثور على عميل بناءً على المعلومات المقدمة." if is_arabic else "No customer found based on the provided information."
-                # تم تعليق السطر السابق واستبداله بالعميل الافتراضي
 
             # Resolve ItemNames to ItemCodes
             resolved_lines = []
@@ -148,7 +180,9 @@ class Chatbot:
                 quantity = line.get("Quantity")
                 item_code = self.db.get_item_code_by_name(item_name)
                 if not item_code:
-                    return f"رمز العنصر لـ '{item_name}' غير موجود." if is_arabic else f"Item code for '{item_name}' not found."
+                    response = f"رمز العنصر لـ '{item_name}' غير موجود." if is_arabic else f"Item code for '{item_name}' not found."
+                    logger.info(f"Response due to missing item code: {response}")
+                    return response
                 resolved_lines.append({"ItemCode": item_code, "Quantity": quantity})
 
             # Log resolved CardCode and DocumentLines
@@ -162,32 +196,35 @@ class Chatbot:
                 "DocumentLines": resolved_lines
             }
 
-            # Log final payload
+            # Log final payload to SAP B1
             logger.info(f"Final payload to SAP B1: {json.dumps(payload, ensure_ascii=False)}")
 
             result = self.db.place_order_from_payload(payload)
             item_summary = ", ".join([f"{line['Quantity']} units of {line['ItemCode']}" for line in resolved_lines])
-            return f"تم تسجيل طلبك لـ {item_summary}." if is_arabic else f"Order placed: {item_summary}."
+            response = f"تم تسجيل طلبك لـ {item_summary}." if is_arabic else f"Order placed: {item_summary}."
+            logger.info(f"Chatbot response: {response}")
+            return response
 
         except Exception as e:
             logger.error(f"Error generating response: {str(e)}")
             is_arabic = self._is_arabic_input(user_input)
-            return "حدث خطأ، من فضلك حاول مرة أخرى." if is_arabic else "An error occurred. Please try again."
-
+            response = "حدث خطأ، من فضلك حاول مرة أخرى." if is_arabic else "An error occurred. Please try again."
+            logger.info(f"Error response: {response}")
+            return response
 
 def create_chatbot():
     try:
         service_layer = SAPB1ServiceLayer(
             base_url=os.getenv("SAPB1_BASE_URL", "https://c19807sl01d04.cloudiax.com:50000/b1s/v1"),
-            company=os.getenv("SAPB1_COMPANY", "BS_PRODUCTIVE"), # A19807_DEMO
+            company=os.getenv("SAPB1_COMPANY", "BS_PRODUCTIVE"),
             username=os.getenv("SAPB1_USERNAME", "manager"),
             password=os.getenv("SAPB1_PASSWORD", "12345"),
             verify_ssl=os.getenv("SAPB1_VERIFY_SSL", "True").lower() == "true"
         )
         nlp = NLPProcessor()
         chatbot = Chatbot(service_layer, nlp)
+        logger.info("Chatbot created successfully")
         return chatbot
     except Exception as e:
         logger.error(f"Failed to create chatbot: {str(e)}")
         raise
-
