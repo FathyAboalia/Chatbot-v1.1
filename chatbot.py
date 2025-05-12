@@ -29,6 +29,7 @@ class NLPProcessor:
             response = requests.post(self.ollama_url, json=payload)
             response.raise_for_status()
             result = response.json()["response"].strip()
+        
             # Extract JSON between first { and last }
             start = result.find("{")
             end = result.rfind("}") + 1
@@ -102,6 +103,7 @@ class Chatbot:
     def _generate_fallback_response(self, is_arabic: bool) -> str:
         return "من فضلك وضح طلبك أكثر." if is_arabic else "Could you please clarify your request?"
 
+
     def get_response(self, user_input: str) -> str:
         try:
             # Log user input
@@ -124,17 +126,20 @@ class Chatbot:
             if not lines or not doc_date or not doc_due_date:
                 return "البيانات غير مكتملة. يرجى تضمين الطلبات والتواريخ." if is_arabic else "Incomplete input. Please include orders and dates."
 
-            # Try to retrieve CardCode based on available identifiers
-            card_code = None
-            if card_code_input:
-                card_code = card_code_input
-            elif email:
-                card_code = self.db.get_card_code_by_email(email)
-            elif customer_name:
-                card_code = self.db.get_card_code_by_name(customer_name)
+            # Try to retrieve CardCode using priority: input > email > name
+            card_code = card_code_input or (
+                self.db.get_card_code_by_email(email) if email else (
+                    self.db.get_card_code_by_name(customer_name) if customer_name else None
+                )
+            )
 
             if not card_code:
-                return "لم يتم العثور على عميل بناءً على المعلومات المقدمة." if is_arabic else "No customer found based on the provided information."
+                # إذا لم يتم العثور على العميل، استخدم عميل افتراضي للتجربة
+                default_card_code = "C00001"  # رمز العميل الافتراضي
+                logger.info(f"Using default customer CardCode: {default_card_code} as no customer was found")
+                card_code = default_card_code
+                # return "لم يتم العثور على عميل بناءً على المعلومات المقدمة." if is_arabic else "No customer found based on the provided information."
+                # تم تعليق السطر السابق واستبداله بالعميل الافتراضي
 
             # Resolve ItemNames to ItemCodes
             resolved_lines = []
@@ -146,6 +151,9 @@ class Chatbot:
                     return f"رمز العنصر لـ '{item_name}' غير موجود." if is_arabic else f"Item code for '{item_name}' not found."
                 resolved_lines.append({"ItemCode": item_code, "Quantity": quantity})
 
+            # Log resolved CardCode and DocumentLines
+            logger.info(f"Resolved CardCode: {card_code}, DocumentLines: {json.dumps(resolved_lines, ensure_ascii=False)}")
+
             # Construct JSON with CardCode and resolved ItemCodes
             payload = {
                 "CardCode": card_code,
@@ -153,6 +161,9 @@ class Chatbot:
                 "DocDueDate": doc_due_date,
                 "DocumentLines": resolved_lines
             }
+
+            # Log final payload
+            logger.info(f"Final payload to SAP B1: {json.dumps(payload, ensure_ascii=False)}")
 
             result = self.db.place_order_from_payload(payload)
             item_summary = ", ".join([f"{line['Quantity']} units of {line['ItemCode']}" for line in resolved_lines])
@@ -163,11 +174,12 @@ class Chatbot:
             is_arabic = self._is_arabic_input(user_input)
             return "حدث خطأ، من فضلك حاول مرة أخرى." if is_arabic else "An error occurred. Please try again."
 
+
 def create_chatbot():
     try:
         service_layer = SAPB1ServiceLayer(
             base_url=os.getenv("SAPB1_BASE_URL", "https://c19807sl01d04.cloudiax.com:50000/b1s/v1"),
-            company=os.getenv("SAPB1_COMPANY", "BS_PRODUCTIVE"),
+            company=os.getenv("SAPB1_COMPANY", "BS_PRODUCTIVE"), # A19807_DEMO
             username=os.getenv("SAPB1_USERNAME", "manager"),
             password=os.getenv("SAPB1_PASSWORD", "12345"),
             verify_ssl=os.getenv("SAPB1_VERIFY_SSL", "True").lower() == "true"
@@ -178,3 +190,4 @@ def create_chatbot():
     except Exception as e:
         logger.error(f"Failed to create chatbot: {str(e)}")
         raise
+
