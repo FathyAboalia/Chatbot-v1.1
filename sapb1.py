@@ -1,6 +1,7 @@
 ﻿import logging
 import requests
 from typing import Optional
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -20,6 +21,8 @@ class SAPB1ServiceLayer:
         try:
             login_url = f"{self.base_url}/Login"
             payload = {"CompanyDB": self.company, "UserName": self.username, "Password": self.password}
+            logger.info(f"Sending login request to URL: {login_url}")
+            logger.info(f"Login payload: {payload}")
             response = self.session.post(login_url, json=payload)
             response.raise_for_status()
             logger.info(f"Successfully logged into SAP B1 at {self.base_url}")
@@ -31,22 +34,42 @@ class SAPB1ServiceLayer:
         """Retrieve CardCode from SAP B1 based on email address."""
         try:
             url = f"{self.base_url}/BusinessPartners?$filter=EmailAddress eq '{email}'&$select=CardCode"
+            logger.info(f"Sending GET request to URL: {url}")
             response = self.session.get(url)
             response.raise_for_status()
             data = response.json()
-            partners = data.get("value", [])
+            logger.debug(f"Raw API response: {data}")
+            
+            # Check if 'value' key exists and is a list
+            if "value" not in data or not isinstance(data["value"], list):
+                logger.warning(f"Unexpected response structure for email {email}: {data}")
+                return None
+            
+            partners = data["value"]
             if not partners:
                 logger.warning(f"No business partner found for email: {email}")
                 return None
-            return partners[0]["CardCode"]
+            
+            # Check if CardCode exists in the first partner
+            if "CardCode" not in partners[0]:
+                logger.warning(f"CardCode not found in response for email {email}: {partners[0]}")
+                return None
+                
+            card_code = partners[0]["CardCode"]
+            logger.info(f"Retrieved CardCode: {card_code} for email: {email}")
+            return card_code
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to retrieve CardCode for email {email}: {str(e)}")
+            return None
+        except (KeyError, TypeError) as e:
+            logger.error(f"Error parsing response for email {email}: {str(e)}")
             return None
 
     def get_card_code_by_name(self, customer_name: str) -> Optional[str]:
         """Retrieve CardCode from SAP B1 based on customer name."""
         try:
             url = f"{self.base_url}/BusinessPartners?$filter=CardName eq '{customer_name}'&$select=CardCode"
+            logger.info(f"Sending GET request to URL: {url}")
             response = self.session.get(url)
             response.raise_for_status()
             data = response.json()
@@ -63,6 +86,7 @@ class SAPB1ServiceLayer:
         """Validate if an ItemCode exists in SAP B1."""
         try:
             url = f"{self.base_url}/Items?$filter=ItemCode eq '{item_code}'&$select=ItemCode"
+            logger.info(f"Sending GET request to URL: {url}")
             response = self.session.get(url)
             response.raise_for_status()
             data = response.json()
@@ -76,6 +100,8 @@ class SAPB1ServiceLayer:
         """Send full JSON payload to SAP B1 Orders API."""
         try:
             order_url = f"{self.base_url}/Orders"
+            logger.info(f"Sending POST request to URL: {order_url}")
+            logger.info(f"Order payload: {payload}")
             response = self.session.post(order_url, json=payload)
             if response.status_code == 201:
                 logger.info("Order placed successfully.")
@@ -89,11 +115,12 @@ class SAPB1ServiceLayer:
     def place_order(self, product_name: str, quantity: int, card_code: str = "C0001") -> str:
         try:
             url = f"{self.base_url}/Items?$filter=ItemName eq '{product_name}'&$select=ItemCode"
+            logger.info(f"Sending GET request to URL: {url}")
             response = self.session.get(url)
             response.raise_for_status()
             data = response.json()
             items = data.get("value", [])
-            if not items:
+            if not partners:
                 logger.warning(f"No product named '{product_name}' found in SAP B1")
                 return f"No product named {product_name} found."
             item_code = items[0]["ItemCode"]
@@ -105,6 +132,8 @@ class SAPB1ServiceLayer:
                 "DocDueDate": datetime.now().strftime("%Y-%m-%d"),
                 "DocumentLines": [{"ItemCode": item_code, "Quantity": quantity, "BPLId": 1}]
             }
+            logger.info(f"Sending POST request to URL: {order_url}")
+            logger.info(f"Order payload: {payload}")
             response = self.session.post(order_url, json=payload)
             if response.status_code == 201:
                 logger.info(f"Order placed: {quantity} units of {product_name}")
@@ -118,6 +147,7 @@ class SAPB1ServiceLayer:
     def close(self):
         try:
             logout_url = f"{self.base_url}/Logout"
+            logger.info(f"Sending POST request to URL: {logout_url}")
             self.session.post(logout_url)
             self.session.close()
             logger.info("SAP B1 session closed.")

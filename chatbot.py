@@ -28,11 +28,13 @@ class NLPProcessor:
         try:
             response = requests.post(self.ollama_url, json=payload)
             response.raise_for_status()
-            result = response.json()["response"]
-
-            # Extract raw JSON only
-            match = re.search(r"\{.*\}", result, re.DOTALL)
-            return match.group(0).strip() if match else "{}"
+            result = response.json()["response"].strip()
+            # Extract JSON between first { and last }
+            start = result.find("{")
+            end = result.rfind("}") + 1
+            if start != -1 and end != -1:
+                return result[start:end]
+            return "{}"
         except Exception as e:
             logger.error(f"Ollama error: {str(e)}")
             return "{}"
@@ -43,25 +45,49 @@ class NLPProcessor:
         doc_due_date = datetime.now().strftime("%Y-%m-%d")
 
         prompt = (
-            f'Given the input: "{user_input}", extract the following: '
-            f'- The email address (e.g., customer@example.com) if present. '
-            f'- The customer name (e.g., Ahmed, Fathy) if present. '
-            f'- The CardCode if present. '
-            f'- A list of orders, where each order includes an item code and quantity. '
-            f'Respond ONLY with a single raw JSON object in the following format: '
+            f'Analyze the user input: "{user_input}". Extract: '
+            f'- Email address (e.g., test@example.com). '
+            f'- Customer name (e.g., Ahmed Fathy). '
+            f'- CardCode (e.g., C12345) if explicitly mentioned. '
+            f'- Orders, each with an item name (e.g., Test Item) and quantity (e.g., 5). '
+            f'The input may be formatted as: '
+            f'- Direct order: "order 5 Test Item for test@example.com" '
+            f'- Conversational: "test@example.com could you order 5 Test Item" '
+            f'- Email-like: "From: test@example.com, Subject: Order, Please order 5 Test Item" '
+            f'- Email reference: "Process the order from test@example.com for 5 Test Item" '
+            f'- Multiple items: "order 5 Test Item and 2 Other Item for test@example.com" '
+            f'Return a single JSON object: '
             f'{{"Email": "<email_address>", "CustomerName": "<customer_name>", "CardCode": "<card_code>", '
             f'"DocDate": "{doc_date}", "DocDueDate": "{doc_due_date}", '
-            f'"DocumentLines": [{{"ItemCode": "<item_code>", "Quantity": <quantity>}}, ...]}} '
-            f'If a field is not present, use an empty string for strings or an empty list for DocumentLines. '
-            f'Your entire response MUST start and end with {{}} and contain nothing else.'
+            f'"DocumentLines": [{{"ItemName": "<item_name>", "Quantity": <quantity>}}, ...]}} '
+            f'Rules: '
+            f'- Use "" for Email, CustomerName, or CardCode if not found. '
+            f'- Use [] for DocumentLines if no orders are identified. '
+            f'- Preserve item name text (e.g., "Test Item"), removing quotes if present. '
+            f'- Quantities must be positive integers; ignore invalid ones. '
+            f'- Ignore irrelevant text (e.g., greetings, "could you"). '
+            f'Response MUST be a JSON object enclosed in {{}}, with no extra text.'
         )
 
         result = self.generate_text(prompt)
         try:
-            return json.loads(result)
+            parsed = json.loads(result)
+            # Validate DocumentLines
+            parsed["DocumentLines"] = [
+                line for line in parsed.get("DocumentLines", [])
+                if line.get("ItemName") and isinstance(line.get("Quantity"), int) and line["Quantity"] > 0
+            ]
+            return parsed
         except Exception as e:
-            logger.warning(f"Invalid JSON from Ollama: {result}")
-            return {}
+            logger.warning(f"Invalid JSON from Ollama: {result}, Error: {str(e)}")
+            return {
+                "Email": "",
+                "CustomerName": "",
+                "CardCode": "",
+                "DocDate": doc_date,
+                "DocDueDate": doc_due_date,
+                "DocumentLines": []
+            }
 
 class Chatbot:
     """Handles user input with customer details and orders, retrieves CardCode, and places orders."""
@@ -78,7 +104,14 @@ class Chatbot:
 
     def get_response(self, user_input: str) -> str:
         try:
+            # Log user input
+            logger.info(f"User input: {user_input}")
+            
             structured = self.nlp.extract_structured_json(user_input)
+            
+            # Log extracted JSON from NLPProcessor
+            logger.info(f"Extracted JSON from NLPProcessor: {json.dumps(structured, ensure_ascii=False)}")
+            
             email = structured.get("Email", "")
             customer_name = structured.get("CustomerName", "")
             card_code_input = structured.get("CardCode", "")
@@ -94,7 +127,7 @@ class Chatbot:
             # Try to retrieve CardCode based on available identifiers
             card_code = None
             if card_code_input:
-                card_code = card_code_input  # Use CardCode if provided
+                card_code = card_code_input
             elif email:
                 card_code = self.db.get_card_code_by_email(email)
             elif customer_name:
@@ -103,22 +136,26 @@ class Chatbot:
             if not card_code:
                 return "لم يتم العثور على عميل بناءً على المعلومات المقدمة." if is_arabic else "No customer found based on the provided information."
 
-            # Validate ItemCodes
+            # Resolve ItemNames to ItemCodes
+            resolved_lines = []
             for line in lines:
-                item_code = line.get("ItemCode")
-                if not item_code or not self.db.validate_item_code(item_code):
-                    return f"رمز العنصر {item_code} غير صالح أو غير موجود." if is_arabic else f"Item code {item_code} is invalid or not found."
+                item_name = line.get("ItemName")
+                quantity = line.get("Quantity")
+                item_code = self.db.get_item_code_by_name(item_name)
+                if not item_code:
+                    return f"رمز العنصر لـ '{item_name}' غير موجود." if is_arabic else f"Item code for '{item_name}' not found."
+                resolved_lines.append({"ItemCode": item_code, "Quantity": quantity})
 
-            # Construct JSON with CardCode
+            # Construct JSON with CardCode and resolved ItemCodes
             payload = {
                 "CardCode": card_code,
                 "DocDate": doc_date,
                 "DocDueDate": doc_due_date,
-                "DocumentLines": lines
+                "DocumentLines": resolved_lines
             }
 
             result = self.db.place_order_from_payload(payload)
-            item_summary = ", ".join([f"{line['Quantity']} units of {line['ItemCode']}" for line in lines])
+            item_summary = ", ".join([f"{line['Quantity']} units of {line['ItemCode']}" for line in resolved_lines])
             return f"تم تسجيل طلبك لـ {item_summary}." if is_arabic else f"Order placed: {item_summary}."
 
         except Exception as e:
