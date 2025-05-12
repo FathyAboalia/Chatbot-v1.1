@@ -15,7 +15,7 @@ class NLPProcessor:
     """Uses Ollama to extract customer details and order details from user input as JSON."""
 
     def __init__(self, ollama_url: str = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate"), 
-                 model_name: str = os.getenv("OLLAMA_MODEL", "llama3:instruct")):
+                 model_name: str = os.getenv("OLLAMA_MODEL", "deepseek-r1:7b")):
         self.ollama_url = ollama_url
         self.model_name = model_name
 
