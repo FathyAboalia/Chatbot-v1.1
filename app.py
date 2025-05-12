@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Initialize chatbot with error handling
+# Initialize chatbot with error handling and logging
 try:
     chatbot = create_chatbot()
     logger.info("Chatbot initialized successfully.")
