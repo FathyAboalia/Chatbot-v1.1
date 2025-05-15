@@ -1,4 +1,6 @@
-﻿import logging      # لتسجيل الأحداث (نجاح، تحذير، خطأ)
+﻿# sapb1.py
+
+import logging      # لتسجيل الأحداث (نجاح، تحذير، خطأ)
 import requests     # لإرسال طلبات HTTP إلى SAP B1
 import os           # لإدارة متغيرات البيئة
 import re           # لإجراء عمليات البحث والتعامل مع النصوص
@@ -12,13 +14,27 @@ logger = logging.getLogger(__name__)
 
 class SAPB1ServiceLayer:
     def __init__(self, base_url: str, company: str, username: str, password: str, verify_ssl: bool):
+        # Validate base_url to ensure it's properly formatted
+        if not base_url:
+            raise ValueError("base_url cannot be None or empty")
+        
+        # Ensure base_url has proper scheme
+        if not base_url.startswith("http://") and not base_url.startswith("https://"):
+            base_url = "https://" + base_url
+            
         self.base_url = base_url
         self.company = company
         self.username = username
         self.password = password
-        self.verify_ssl = verify_ssl
+        
+        # Handle verify_ssl parameter properly
+        if isinstance(verify_ssl, str):
+            self.verify_ssl = verify_ssl.lower() == "true"
+        else:
+            self.verify_ssl = bool(verify_ssl)
+            
         self.session = requests.Session()
-        self.session.verify = verify_ssl
+        self.session.verify = self.verify_ssl
         self.session.headers.update({"Content-Type": "application/json"})
         self.logged_in = False
         self.login()

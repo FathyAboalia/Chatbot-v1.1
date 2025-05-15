@@ -1,4 +1,6 @@
-﻿import os
+﻿# chatbot.py
+
+import os
 import re
 import json
 import logging
@@ -39,7 +41,7 @@ class NLPProcessor:
                  model_name: str = os.getenv("OLLAMA_MODEL", "deepseek-r1:7b")):
         self.ollama_url = ollama_url
         self.model_name = model_name
-        logger.info(f"Initialized NLPProcessor with ollama_url={self.ollama_url}, model_name={self.model_name}")
+        logger.info(f"Initialized NLPProcessor with model: {self.model_name}")
 
     def generate_text(self, prompt: str) -> str:
         payload = {
@@ -214,12 +216,22 @@ class Chatbot:
 
 def create_chatbot():
     try:
+        # Get environment variables with proper validation
+        base_url = os.getenv("SAPB1_BASE_URL")
+        if not base_url:
+            logger.error("SAPB1_BASE_URL environment variable is not set")
+            raise ValueError("SAPB1_BASE_URL environment variable is not set")
+            
+        # Convert verify_ssl string to boolean
+        verify_ssl_str = os.getenv("SAPB1_VERIFY_SSL", "False")
+        verify_ssl = verify_ssl_str.lower() == "true"
+        
         service_layer = SAPB1ServiceLayer(
-            base_url=os.getenv("SAPB1_BASE_URL", "https://c19807sl01d04.cloudiax.com:50000/b1s/v1"),
-            company=os.getenv("SAPB1_COMPANY", "BS_PRODUCTIVE"),
-            username=os.getenv("SAPB1_USERNAME", "manager"),
-            password=os.getenv("SAPB1_PASSWORD", "12345"),
-            verify_ssl=os.getenv("SAPB1_VERIFY_SSL", "True").lower() == "true"
+            base_url=base_url,
+            company=os.getenv("SAPB1_COMPANY"),
+            username=os.getenv("SAPB1_USERNAME"),
+            password=os.getenv("SAPB1_PASSWORD"),
+            verify_ssl=verify_ssl
         )
         nlp = NLPProcessor()
         chatbot = Chatbot(service_layer, nlp)
