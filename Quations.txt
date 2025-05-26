@@ -1,0 +1,337 @@
+order 5 شبكة مكابح لجلبة Item for test@example.com
+
+
+order 5 شبكة مكابح لجلبة Item for test@example.com
+
+
+
+order 5 جلبة نحاس Item for test@example.com
+
+
+order فرق التقريب Item for test@example.com
+
+
+order موبايل اوبو 8 جيجا رام Item for test@example.com
+
+
+order iphone 111 Item for test@example.com
+
+
+----------------------
+
+Order 3 Test for test@example.com
+Can you place an order for 5 جلبة نحاس please?
+test@example.com wants 2 موبايل اوبو 8 جيجا رام
+Order 10 شبكة مكابح لجلبة and 4 Test
+From test@example.com: Please order 7 iphone 111
+I need 6 فرق التقريب for test@example.com
+Place an order: 8 جلبة نحاس and 3 Test
+test@example.com, order 4 شبكة مكابح لجلبة
+Could you order 5 موبايل اوبو 8 جيجا رام?
+For test@example.com, get 2 Test and 3 جلبة نحاس
+Order 9 iphone 111 from test@example.com
+Please order 4 فرق التقريب
+test@example.com: I want 6 شبكة مكابح لجلبة
+Can you get 7 Test and 2 موبايل اوبو 8 جيجا رام for test@example.com?
+Order 5 جلبة نحاس
+From test@example.com, order 3 iphone 111 and 4 Test
+I’d like to order 8 فرق التقريب
+test@example.com needs 6 موبايل اوبو 8 جيجا رام
+Order 2 شبكة مكابح لجلبة and 5 جلبة نحاس for test@example.com
+Please get 3 Test
+test@example.com, place an order for 4 iphone 111
+Order 7 فرق التقريب and 2 موبايل اوبو 8 جيجا رام
+For test@example.com: 5 شبكة مكابح لجلبة
+Can you order 6 جلبة نحاس for test@example.com?
+I want 3 Test and 4 iphone 111
+باللغة العربية (مع وبدون البريد الإلكتروني)
+اطلب 5 Test من test@example.com
+هل يمكنك طلب 3 جلبة نحاس؟
+test@example.com يريد 4 موبايل اوبو 8 جيجا رام
+اطلب 6 شبكة مكابح لجلبة و2 Test
+من test@example.com: من فضلك اطلب 7 iphone 111
+أحتاج 5 فرق التقريب من test@example.com
+ضع طلب: 8 جلبة نحاس و3 Test
+test@example.com، اطلب 4 شبكة مكابح لجلبة
+هل يمكن طلب 6 موبايل اوبو 8 جيجا رام؟
+من test@example.com، اطلب 2 Test و5 جلبة نحاس
+اطلب 9 iphone 111 من test@example.com
+من فضلك اطلب 4 فرق التقريب
+test@example.com: أريد 6 شبكة مكابح لجلبة
+هل يمكنك طلب 7 Test و3 مو sill اوبو 8 جيجا رام من test@example.com؟
+اطلب 5 جلبة نحاس
+من test@example.com، اطلب 3 iphone 111 و4 Test
+أود طلب 8 فرق التقريب
+test@example.com يحتاج 6 موبايل اوبو 8 جيجا رام
+اطلب 2 شبكة مكابح لجلبة و5 جلبة نحاس من test@example.com
+من فضلك اطلب 3 Test
+test@example.com، ضع طلب لـ 4 iphone 111
+اطلب 7 فرق التقريب و2 موبايل اوبو 8 جيجا رام
+من test@example.com: 5 شبكة مكابح لجلبة
+هل يمكن طلب 6 جلبة نحاس من test@example.com؟
+أريد 3 Test و4 iphone 111
+
+
+------------------
+
+
+# app.py
+
+import logging
+from flask import Flask, request, render_template, jsonify
+from chatbot import create_chatbot
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = Flask(__name__)
+
+# Initialize chatbot with error handling
+try:
+    chatbot = create_chatbot()
+    logger.info("Chatbot initialized successfully.")
+except Exception as e:
+    logger.error(f"Failed to initialize chatbot: {str(e)}")
+    chatbot = None
+
+@app.route("/", methods=["GET", "POST"])
+def chat():
+    if not chatbot:
+        return jsonify({"status": "error", "message": "Chatbot initialization failed. Check server logs."}), 500
+
+    if request.method == "POST":
+        user_input = request.form.get("message", "").strip()
+        if not user_input:
+            return jsonify({"status": "error", "message": "Message cannot be empty."}), 400
+
+        try:
+            response = chatbot.get_response(user_input)
+            logger.info(f"User input: {user_input} | Bot response: {response}")
+            return jsonify({"status": "success", "response": response})
+        except Exception as e:
+            logger.error(f"Error processing request: {str(e)}")
+            return jsonify({"status": "error", "message": "An error occurred. Please try again."}), 500
+
+    return render_template("index.html")
+
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=5000)
+
+
+-------------------
+
+
+
+# chatbot.py
+
+import os
+import re
+import json
+import logging
+import requests
+from typing import Dict
+from datetime import datetime, timedelta
+from sapb1 import SAPB1ServiceLayer
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+class NLPProcessor:
+    """Uses Ollama to classify document type and extract structured data as JSON only."""
+
+    def __init__(self, ollama_url: str = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate"), 
+                 model_name: str = os.getenv("OLLAMA_MODEL", "llama3:instruct")):
+        self.ollama_url = ollama_url
+        self.model_name = model_name
+
+    def generate_text(self, prompt: str) -> str:
+        payload = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "stream": False
+        }
+        try:
+            response = requests.post(self.ollama_url, json=payload)
+            response.raise_for_status()
+            result = response.json()["response"]
+
+            # Extract raw JSON only
+            match = re.search(r"\{.*\}", result, re.DOTALL)
+            return match.group(0).strip() if match else "{}"
+        except Exception as e:
+            logger.error(f"Ollama error: {str(e)}")
+            return "{}"
+
+    def extract_structured_json(self, user_input: str) -> dict:
+        # Use dynamic dates for consistency
+        now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S.0000000+03:00")
+        due = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S.0000000+03:00")
+
+        prompt = (
+            f'Given the input string: "{user_input}", classify the DocumentType as one of: "Order", "Quotation", or "Price". '
+            f'Then, extract entities in the following format: '
+            f'{{"DocumentType": "<classified_type>", "CardCode": "<customer_code>", '
+            f'"DocumentDate": "{now}", "DocDueDate": "{due}", "DocumentLines": [{{"ItemCode": "<item_code>", "Quantity": <quantity>}}]}} '
+            f'Respond ONLY with a single raw JSON object. Do not add any explanations, greetings, or commentary before or after the JSON. '
+            f'Your entire response MUST start and end with {{}} and contain nothing else.'
+        )
+
+        result = self.generate_text(prompt)
+        try:
+            return json.loads(result)
+        except Exception as e:
+            logger.warning(f"Invalid JSON from Ollama: {result}")
+            return {}
+
+class Chatbot:
+    """Handles user interactions and queries the service layer for responses."""
+
+    def __init__(self, service_layer: SAPB1ServiceLayer, nlp_processor: NLPProcessor):
+        self.db = service_layer
+        self.nlp = nlp_processor
+
+    def _is_arabic_input(self, user_input: str) -> bool:
+        return any(char in user_input for char in "ابتثجحخدذرزسشصضطظعغفقكلمنهويةى")
+
+    def _generate_fallback_response(self, is_arabic: bool) -> str:
+        return "من فضلك وضح طلبك أكثر." if is_arabic else "Could you please clarify your request?"
+
+    def get_response(self, user_input: str) -> str:
+        try:
+            structured = self.nlp.extract_structured_json(user_input)
+            card = structured.get("CardCode")
+            lines = structured.get("DocumentLines", [])
+            intent = structured.get("DocumentType", "").lower()
+            document_date = structured.get("DocumentDate")
+            doc_due_date = structured.get("DocDueDate")
+
+            is_arabic = self._is_arabic_input(user_input)
+
+            if not card or not lines or not document_date or not doc_due_date:
+                return "البيانات غير مكتملة." if is_arabic else "Incomplete input."
+
+            if intent == "order":
+                # Construct payload directly from structured JSON
+                payload = {
+                    "CardCode": card,
+                    "DocumentDate": document_date,
+                    "DocDueDate": doc_due_date,
+                    "DocumentLines": lines
+                }
+                result = self.db.place_order_from_payload(payload)
+                item_summary = ", ".join([f"{line['Quantity']} units of {line['ItemCode']}" for line in lines])
+                return f"تم تسجيل طلبك لـ {item_summary}." if is_arabic else f"Order placed: {item_summary}."
+
+            return self._generate_fallback_response(is_arabic)
+
+        except Exception as e:
+            logger.error(f"Error generating response: {str(e)}")
+            is_arabic = self._is_arabic_input(user_input)
+            return "حدث خطأ، من فضلك حاول مرة أخرى." if is_arabic else "An error occurred. Please try again."
+
+def create_chatbot():
+    try:
+        service_layer = SAPB1ServiceLayer(
+            base_url=os.getenv("SAPB1_BASE_URL", "https://c19807sl01d04.cloudiax.com:50000/b1s/v1"),
+            company=os.getenv("SAPB1_COMPANY", "BS_PRODUCTIVE"), # A19807_DEMO
+            username=os.getenv("SAPB1_USERNAME", "manager"),
+            password=os.getenv("SAPB1_PASSWORD", "12345"),
+            verify_ssl=os.getenv("SAPB1_VERIFY_SSL", "True").lower() == "true"
+        )
+        nlp = NLPProcessor()
+        chatbot = Chatbot(service_layer, nlp)
+        return chatbot
+    except Exception as e:
+        logger.error(f"Failed to create chatbot: {str(e)}")
+        raise
+
+
+
+-----------------
+
+
+
+# sapb1.py
+
+import logging
+import requests
+from typing import Optional
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+class SAPB1ServiceLayer:
+    def __init__(self, base_url: str, company: str, username: str, password: str, verify_ssl: bool = False):
+        self.base_url = base_url
+        self.company = company
+        self.username = username
+        self.password = password
+        self.session = requests.Session()
+        self.session.verify = verify_ssl  # Disable SSL verification for testing; enable in production
+        self._login()
+
+    def _login(self):
+        try:
+            login_url = f"{self.base_url}/Login"
+            payload = {"CompanyDB": self.company, "UserName": self.username, "Password": self.password}
+            response = self.session.post(login_url, json=payload)
+            response.raise_for_status()
+            logger.info(f"Successfully logged into SAP B1 at {self.base_url}")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Login failed: {str(e)}")
+            raise Exception(f"Failed to login to SAP B1 Service Layer: {str(e)}")
+
+    def place_order_from_payload(self, payload: dict) -> str:
+        """Send full JSON payload to SAP B1 Orders API."""
+        try:
+            order_url = f"{self.base_url}/Orders"
+            response = self.session.post(order_url, json=payload)
+            if response.status_code == 201:
+                logger.info("Order placed successfully.")
+                return "Order placed successfully."
+            logger.error(f"Failed to place order: {response.text}")
+            return f"Error placing order: {response.text}"
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to place order: {str(e)}")
+            raise Exception(f"Failed to place order: {str(e)}")
+
+    def place_order(self, product_name: str, quantity: int, card_code: str = "") -> str:
+        try:
+            # Use exact match for ItemName
+            url = f"{self.base_url}/Items?$filter=ItemName eq '{product_name}'&$select=ItemCode"
+            response = self.session.get(url)
+            response.raise_for_status()
+            data = response.json()
+            items = data.get("value", [])
+            if not items:
+                logger.warning(f"No product named '{product_name}' found in SAP B1")
+                return f"No product named {product_name} found."
+            item_code = items[0]["ItemCode"]
+
+            order_url = f"{self.base_url}/Orders"
+            payload = {
+                "CardCode": card_code,
+                "DocDueDate": "2025-05-05",  # Consider making this dynamic
+                "DocumentLines": [{"ItemCode": item_code, "Quantity": quantity, "BPLId": 1}]  # BPLId may need configuration
+            }
+            response = self.session.post(order_url, json=payload)
+            if response.status_code == 201:
+                logger.info(f"Order placed: {quantity} units of {product_name}")
+                return f"Order for {quantity} units of {product_name} placed successfully."
+            logger.error(f"Failed to place order: {response.text}")
+            return f"Error placing order: {response.text}"
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to place order for {product_name}: {str(e)}")
+            raise Exception(f"Failed to place order: {str(e)}")
+
+    def close(self):
+        try:
+            logout_url = f"{self.base_url}/Logout"
+            self.session.post(logout_url)
+            self.session.close()
+            logger.info("SAP B1 session closed.")
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Failed to logout: {str(e)}")

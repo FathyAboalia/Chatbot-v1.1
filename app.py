@@ -1,6 +1,13 @@
-﻿import logging
+﻿# app.py
+
+import logging
+import os
 from flask import Flask, request, render_template, jsonify
 from chatbot import create_chatbot
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
