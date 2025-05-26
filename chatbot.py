@@ -38,7 +38,7 @@ class NLPProcessor:
     """Uses Ollama to extract customer details and order details from user input as JSON."""
 
     def __init__(self, ollama_url: str = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate"), 
-                 model_name: str = os.getenv("OLLAMA_MODEL", "deepseek-r1:7b")):
+                 model_name: str = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")):
         self.ollama_url = ollama_url
         self.model_name = model_name
         logger.info(f"Initialized NLPProcessor with model: {self.model_name}")
@@ -171,7 +171,7 @@ class Chatbot:
 
             if not card_code:
                 # Use default customer for testing
-                default_card_code = "C00001"  # Default CardCode
+                default_card_code = "C0001"  # Default CardCode
                 logger.info(f"Using default customer CardCode: {default_card_code} as no customer was found")
                 card_code = default_card_code
 

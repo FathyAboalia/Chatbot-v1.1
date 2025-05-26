@@ -298,7 +298,7 @@ class SAPB1ServiceLayer:
             logger.error(f"Failed to place order: {str(e)}")
             raise Exception(f"Failed to place order: {str(e)}")
 
-    def place_order(self, product_name: str, quantity: int, card_code: str = "C0001") -> str:
+    def place_order(self, product_name: str, quantity: int, card_code: str = "") -> str:
         try:
             # Use exact match for ItemName
             url = f"{self.base_url}/Items?$filter=ItemName eq '{product_name}'&$select=ItemCode"
