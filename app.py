@@ -2,7 +2,7 @@
 
 import logging
 import os
-from flask import Flask, request, render_template, jsonify
+from flask import Flask, request,  render_template, jsonify
 from chatbot import create_chatbot
 from dotenv import load_dotenv
 
