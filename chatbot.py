@@ -1,5 +1,4 @@
 ﻿# chatbot.py
-
 import os
 import re
 import json
@@ -201,6 +200,7 @@ class Chatbot:
             # Log final payload to SAP B1
             logger.info(f"Final payload to SAP B1: {json.dumps(payload, ensure_ascii=False)}")
 
+            # Place order and get success status and order ID
             result = self.db.place_order_from_payload(payload)
             item_summary = ", ".join([f"{line['Quantity']} units of {line['ItemCode']}" for line in resolved_lines])
             response = f"تم تسجيل طلبك لـ {item_summary}." if is_arabic else f"Order placed: {item_summary}."
