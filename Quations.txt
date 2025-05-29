@@ -1,3 +1,37 @@
+test@example.com
+T0001 --> Test Item
+10002000 --> جلبة نحاس
+10002003 --> شبكة مكابح لجلبة
+/10011 --> فرق التقريب
+101003 --> موبايل اوبو 8 جيجا رام
+1010 -->  iphone 11
+110101.0001 -->  كلور سائل
+/10013 -->  ضرائب الدمغه
+101002 -->  موبايل شاومى 12 جيجا رام
+01 -->  Budget
+0001 -->  كراسي
+098 --> laptop1
+
+----------------
+
+I need to place an order for all these items:
+3 Test Item,
+2 جلبة نحاس,
+4 شبكة مكابح لجلبة,
+1 فرق التقريب,
+1 موبايل اوبو 8 جيجا رام,
+3 iPhone 11,
+3 كلور سائل,
+2 laptop1,
+2 موبايل شاومى 12 جيجا رام,
+3 Budget,
+2 x كراسي,
+5 laptop1,
+for test@example.com
+
+----------------------
+
+
 order 5 شبكة مكابح لجلبة Item for test@example.com
 
 
@@ -15,6 +49,7 @@ order موبايل اوبو 8 جيجا رام Item for test@example.com
 
 
 order iphone 111 Item for test@example.com
+
 
 
 ----------------------
