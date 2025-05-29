@@ -79,7 +79,7 @@ class SAPB1ServiceLayer:
 
     def get_card_code_by_email(self, email: str) -> Optional[str]:
         try:
-            endpoint = f"BusinessPartners?$filter=E_Mail eq '{email}'&$select=CardCode"
+            endpoint = f"BusinessPartners?$filter=EmailAddress eq'{email}'"
             response = self.request_with_reauth("GET", endpoint)
             data = response.json()
             if data["value"]:
@@ -90,7 +90,7 @@ class SAPB1ServiceLayer:
 
     def get_card_code_by_name(self, customer_name: str) -> Optional[str]:
         try:
-            endpoint = f"BusinessPartners?$filter=CardName eq '{customer_name}'&$select=CardCode"
+            endpoint = f"BusinessPartners?$filter=CardName eq '{customer_name}'"
             response = self.request_with_reauth("GET", endpoint)
             data = response.json()
             if data["value"]:
@@ -101,7 +101,7 @@ class SAPB1ServiceLayer:
 
     def get_item_code_by_name(self, item_name: str) -> Optional[str]:
         try:
-            endpoint = f"Items?$filter=ItemName eq '{item_name}'&$select=ItemCode"
+            endpoint = f"Items?$filter=ItemName eq '{item_name}'"
             response = self.request_with_reauth("GET", endpoint)
             data = response.json()
             if data["value"]:
@@ -113,6 +113,8 @@ class SAPB1ServiceLayer:
     def place_order_from_payload(self, payload: Dict) -> bool:
         try:
             response = self.request_with_reauth("POST", "Orders", json=payload)
+            data = response.json()
+            order_id = data.get("DocEntry")  # Extract DocEntry from response
             logger.info(f"Order placed successfully with payload: {json.dumps(payload, ensure_ascii=False)}")
             return True
         except Exception as e:
